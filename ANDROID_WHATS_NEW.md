@@ -6,6 +6,9 @@ ANDROID_CHANGELOG.md.
 
 | Type | Change | What it means for you |
 | --- | --- | --- |
+| Fixed (Beta 2) | Resizing the toolbar | The toolbar edge follows your finger at the same speed, including with enlarged menus. Touch its edge and drag in one gesture; a separate tap is no longer needed to activate resizing. |
+| Fixed (Beta 2) | Blender 5.3 stability updates | Includes 18 Blender fixes for graphics, switching between file and asset browsing, startup scripts and handling long names or paths. The update adds memory bounds checks and fixes several crash conditions while preserving the Android controls. |
+| Fixed (Beta 2) | Painting the gaps between editors | The narrow spaces between editors now receive the interface background color before the editors are drawn, so untouched screen pixels cannot show stray colors from graphics memory. |
 | New | Online Essentials | The ready-made models, materials and node groups Blender offers in the Asset Browser now load on the phone. They are downloaded from blender.org when you use them, so turn on "Allow Online Access" (Preferences, System) first; the brushes and basic node groups that come built in are unchanged. Before, this library was switched off on Android because its downloader could not run here. |
 | Fixed | Opening folders | In the File Browser one tap opens a folder. It used to take a double tap that a finger rarely lands, so it often took several tries. Dragging over the list scrolls it without opening anything. |
 | New | Debug mode | For whoever builds the app: `build_files/android/debug.sh` switches Blender's debug output on and off without reinstalling, follows the app's log, shows the last crash, and packs logs, memory and input state and a screenshot into one file to attach to a bug report. |

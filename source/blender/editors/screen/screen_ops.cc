@@ -1320,6 +1320,21 @@ static void actionzone_apply(bContext *C, wmOperator *op, int type)
   event.customdata_free = true;
   op->customdata = nullptr;
 
+#ifdef __ANDROID__
+  if (type == AZONE_REGION) {
+    /* Touch may queue the press, motion and release together. Start resizing before those
+     * pending events, at the actual press position rather than the latest event state. */
+    const sActionzoneData *sad = static_cast<const sActionzoneData *>(event.customdata);
+    event.xy[0] = sad->x;
+    event.xy[1] = sad->y;
+    wmEvent *region_event = WM_event_add(win, &event);
+    BLI_remlink(&win->runtime->event_queue, region_event);
+    BLI_insertlinkafter(
+        &win->runtime->event_queue, win->runtime->event_queue.first(), region_event);
+    return;
+  }
+#endif
+
   WM_event_add(win, &event);
 }
 
@@ -3366,6 +3381,8 @@ static wmOperatorStatus region_scale_invoke(bContext *C, wmOperator *op, const w
     }
     rmd->area = sad->sa1;
     rmd->edge = az->edge;
+    /* Stored region sizes use the scale of the resized region, including menu chrome. */
+    const ScopedMenuScale menu_scale(rmd->region, rmd->area);
     copy_v2_v2_int(rmd->orig_xy, event->xy);
     rmd->maxsize = ED_area_max_regionsize(rmd->area, rmd->region, rmd->edge);
 
@@ -3492,6 +3509,9 @@ static void region_scale_apply_stack(RegionMoveData *rmd,
 static wmOperatorStatus region_scale_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
   RegionMoveData *rmd = static_cast<RegionMoveData *>(op->customdata);
+  /* Match region_rect_recursive(): otherwise menu-scaled bars move faster than the pointer.
+   * Use the resized region, since the event context may be the adjacent editor canvas. */
+  const ScopedMenuScale menu_scale(rmd->region, rmd->area);
   int delta;
 
   /* execute the events */

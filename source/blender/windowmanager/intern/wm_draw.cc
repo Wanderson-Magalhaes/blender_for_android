@@ -1163,11 +1163,13 @@ static void wm_draw_window_onscreen(bContext *C, wmWindow *win, int view)
   /* Draw into the window frame-buffer, in full window coordinates. */
   wmWindowViewport(win);
 
-/* We draw on all pixels of the windows so we don't need to clear them before.
- * Actually this is only a problem when resizing the window.
- * If it becomes a problem we should clear only when window size changes. */
-#if 0
-  GPU_clear_color(0, 0, 0, 0);
+#ifdef __ANDROID__
+  /* Region blits and anti-aliased editor borders do not cover every pixel, notably the
+   * gap below the top bar. The Vulkan back-buffer has no initial contents, so leaving
+   * these pixels untouched can expose colored garbage after creation or resizing. */
+  float background[3];
+  ui::theme::get_color_3fv(TH_EDITOR_BORDER, background);
+  GPU_clear_color(background[0], background[1], background[2], 1.0f);
 #endif
 
   /* Blit non-overlapping area regions. */
