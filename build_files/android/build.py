@@ -363,6 +363,11 @@ def main() -> int:
     parser.add_argument("--repackage", action="store_true",
                         help="rebuild the runtime payload too; needed when scripts, "
                              "datafiles or the dependency set change")
+    parser.add_argument("--release", action="store_true",
+                        help="full release: repackage, test Cycles and live EEVEE on --serial, "
+                             "then promote only a passing APK into apk/releases")
+    parser.add_argument("--render-reference", type=Path, metavar="DIR",
+                        help="official desktop reference from tests/create_render_reference.py")
     parser.add_argument("--validation", action="store_true",
                         help="bundle the Khronos validation layer into the APK; implies "
                              "--debuggable, which the layer loader requires")
@@ -392,6 +397,20 @@ def main() -> int:
     parser.add_argument("-s", "--serial", help="adb device serial")
     args = parser.parse_args()
 
+    if args.render_reference and not args.release:
+        parser.error("--render-reference requires --release; ordinary builds are not validated")
+
+    if args.release:
+        if args.config != "full" or not args.serial or not args.render_reference:
+            parser.error("--release requires full, --serial and --render-reference")
+        if (args.debuggable or args.validation or args.no_archive or args.install or args.run
+                or args.clear_caches or args.enable_validation_layers or args.disable_validation_layers
+                or args.enable_turnip or args.disable_turnip or args.verbose_log):
+            parser.error("--release owns installation/validation; do not combine debug/device actions")
+        sys.path.insert(0, str(SCRIPT_DIR / "tests"))
+        from run_render_regressions import preflight
+        preflight(args.render_reference, args.serial)
+
     if args.build_base:
         global BUILD_BASE, APK_ARCHIVE
         BUILD_BASE = resolve_build_base(args.build_base)
@@ -403,14 +422,18 @@ def main() -> int:
         # A validation build has to be repackaged: base.apk carries the manifest.
         debuggable = args.validation or args.debuggable
         build(args.config,
-              repackage=args.repackage or args.clean or debuggable,
+              repackage=args.repackage or args.clean or debuggable or args.release,
               debuggable=debuggable,
               turnip=args.turnip,
               reconfigure=args.reconfigure)
         if args.validation:
             inject_validation_layer(args.config)
         print(f"APK: {apk_path(args.config, args.turnip)}")
-        if not args.no_archive:
+        if args.release:
+            from release_validation import validate_release
+            validate_release(apk_path(args.config, args.turnip), args.render_reference,
+                             BUILD_BASE, args.serial)
+        elif not args.no_archive:
             archive_apk(args.config, args.turnip, args.keep)
 
     if args.install:
@@ -444,3 +467,6 @@ if __name__ == "__main__":
     except subprocess.CalledProcessError as ex:
         print(f"\nfailed: {' '.join(str(c) for c in ex.cmd)}", file=sys.stderr)
         sys.exit(ex.returncode)
+    except (RuntimeError, OSError, ValueError, AssertionError) as ex:
+        print(f"\nfailed: {ex}", file=sys.stderr)
+        sys.exit(1)

@@ -9,12 +9,20 @@ change, say what it does for the user, and put the commit hash at the end.
 
 ## New Features
 
+* Full releases require the Cycles/EEVEE gate through `build.py full --release`.
+  Nine Cycles renders and an EEVEE final render are compared with an official
+  desktop reference; EEVEE also runs a 40-second live orbit with composed Android
+  screenshots. Failed/incomplete checks block promotion. Approved APKs carry
+  checksum-bound JSON evidence in `apk/releases`; ordinary build archives remain
+  development artifacts. Host tests cover fail-closed decisions and integration.
+  `177c1de6c`
+
 * Online Essentials and the other remote asset libraries work on Android. The HTTP downloader
   runs its background side on a thread there instead of a spawned process, and the pure-Python
-  packages it needs are bundled. (uncommitted)
+  packages it needs are bundled. `17edfb0bc`
 
 * Debug mode: `build_files/android/debug.sh`, and launch arguments read from the app's external
-  files directory as well, so debug flags need no rebuild. (uncommitted)
+  files directory as well, so debug flags need no rebuild. `c0edd3a2f`
 
 * Synced with Blender 5.3 Beta (`blender-v5.3-release` at `fefcb557`), merged as a real
   three-way merge against the recovered anchor `b73c4e89` rather than 2,024 cherry-picks, so
@@ -207,6 +215,26 @@ change, say what it does for the user, and put the commit hash at the end.
 
 ## Bug Fixes
 
+* Android package information now identifies Blender 5.3 Beta, matching the running
+  program instead of retaining the old Alpha label. `227377392`
+
+* Cycles: fixed dark and horizontally banded shading by preserving packed SVM node fields
+  during serialization. Replaced strict-aliasing-violating `int *` reads with `memcpy`;
+  the default material's normal offset had become 113 instead of 0 and read three
+  unwritten stack slots. The unsafe code came from upstream `7ee94c067` (2026-04-09)
+  and is present in the initial Android commit `897d6548c`; the first affected APK
+  has not been established. Removed the kernel auto-initialization experiment and
+  native probes. On the S24 Ultra, nine final CPU renders matched the official
+  desktop reference with mean linear ROI error 3.75e-8; EEVEE's existing workaround
+  stayed unchanged. See `ANDROID_RENDER_REGRESSION_STUDY.md`. `8269e1e45`
+
+* Beta 2: fixed abrupt EEVEE lighting changes while orbiting on Qualcomm Android by
+  disabling dynamic vertex input, matching the existing Windows Qualcomm workaround.
+  Continuous-motion recordings reproduce the defect and verify the targeted fix
+  without globally forcing GPU workarounds. The 18 upstream fixes remain applied.
+  See `ANDROID_RENDER_REGRESSION_STUDY.md` and
+  `build_files/android/tests/render_regressions.py`. `7809c5374`
+
 * Beta 2: region resizing uses the resized region's menu scale for pointer deltas,
   size limits and snapping. At Menu Scale 0.50 the toolbar previously advanced about
   1.5 pixels per pixel dragged. Android region action-zone events now run immediately
@@ -235,7 +263,7 @@ change, say what it does for the user, and put the commit hash at the end.
   See `ANDROID_EDITOR_BORDER_GLITCH_STUDY.md`. `01d2c2dcc`
 
 * One tap opens a folder in the File Browser: single click opening defaults on for Android, and
-  selection acts on click so a scroll does not open the folder it starts on. (uncommitted)
+  selection acts on click so a scroll does not open the folder it starts on. `40cbf5853`
 
 * `fastdeploy.sh` rebuilds the dex when `BlenderActivity.java` changed. It reused the staged
   one, so a Java edit never reached the device and a new native side shipped beside old Java,

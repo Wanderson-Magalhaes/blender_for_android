@@ -79,6 +79,9 @@ $BUILD_BASE/apk                        archived APKs, newest linked as <cfg>-lat
 `--build-base`, then the environment, then the first candidate that actually
 holds `lib/android_arm64`, and stops with a clear message when it finds nothing.
 
+The APK manifest version label now matches Blender 5.3 Beta; it previously still
+said Alpha in Android app information. See `build_files/android/apk/app/src/main/AndroidManifest.xml`.
+
 ## Dependencies
 
 [build_files/android/deps/build.sh](build_files/android/deps/build.sh) cross
@@ -130,6 +133,18 @@ Useful flags:
 | `--keep N`, `--no-archive` | How many archived APKs to retain. |
 | `--debuggable`, `--validation`, `--turnip` | Debug variants. |
 | `-s SERIAL` | Which device, when more than one is attached. |
+
+### Required render gate for a full release
+
+Use `build_files/android/build.py full --release --render-reference DIR -s SERIAL`
+for every full release. It repackages and tests the exact signed candidate on the
+named device: nine Cycles renders, an EEVEE final render and composed Android
+screenshots during a 40-second live orbit. Only a complete pass writes an APK and
+checksum-bound JSON evidence into `$BUILD_BASE/apk/releases`. Missing prerequisites,
+crashes, timeouts or bad lighting block approval. Normal archives are development
+artifacts. Generate references with official desktop Blender, never the candidate.
+See [release test instructions](build_files/android/tests/README.md).
+Lite omits Cycles and cannot pass this full gate.
 
 ### Four traps, all of them silent
 
@@ -458,6 +473,8 @@ first. The general form: a scale applies to a scope, so check what else is in th
 | Android initializes the window background to opaque `TH_EDITOR_BORDER` before composing regions on every redraw. Region blits and antialiased borders do not cover every pixel: the small gap below the top bar can otherwise expose undefined Vulkan back-buffer contents. Tested on the S24 Ultra at startup, in both orientations, after resizing horizontal/vertical editor boundaries and after background/resume. The original intermittent blue/magenta symptom did not reproduce in the baseline session, so the study distinguishes corrected pixel coverage from proof that every occurrence is resolved | [wm_draw.cc](source/blender/windowmanager/intern/wm_draw.cc) `wm_draw_window_onscreen()`, [ANDROID_EDITOR_BORDER_GLITCH_STUDY.md](ANDROID_EDITOR_BORDER_GLITCH_STUDY.md) |
 | The graphics memory figure counts only what Blender can allocate. It summed the size of every device-local heap, which on a phone means two mistakes at once: the first heap is all of system memory, shared with Android, and the second is a protected heap for DRM content that Blender can never allocate from. Measured on an Adreno 750: 11084 MiB + 4095 MiB, reported as "VRAM: 14.8 GiB" on a phone sold with 12 GB. Heaps reachable only through `VK_MEMORY_PROPERTY_PROTECTED_BIT` types are skipped, and the figure is `VmaBudget::budget` -- what the driver will actually promise this process -- rather than the raw heap size. Reads 8.7 GiB there now. Exposed to Python as `gpu.capabilities.memory_statistics_get()` so the Cycles device panel shows the same number as the status bar by construction | [vk_device.cc](source/blender/gpu/vulkan/vk_device.cc) `memory_statistics_get()` and `memory_heap_is_allocatable()`, [gpu_py_capabilities.cc](source/blender/python/gpu/gpu_py_capabilities.cc), [space_userpref.py](scripts/startup/bl_ui/space_userpref.py) `_device_memory_available()` |
 | Qualcomm is asked for SPIR-V 1.3 whatever version it reports supporting. Its compiler refuses compute modules emitted as 1.5, which are the ones EEVEE uses for shadows and light culling | [vk_shader_compiler.cc](source/blender/gpu/vulkan/vk_shader_compiler.cc) |
+| EEVEE motion lighting on Qualcomm Android uses static vertex input. The driver's dynamic vertex input path caused abrupt shading changes during continuous orbiting; disabling only that feature fixed the motion recordings without forcing all GPU workarounds. The existing Windows Qualcomm workaround remains in place | [vk_backend.cc](source/blender/gpu/vulkan/vk_backend.cc) `VKBackend::detect_workarounds()`, [ANDROID_RENDER_REGRESSION_STUDY.md](ANDROID_RENDER_REGRESSION_STUDY.md) |
+| Cycles serializes SVM node structs with `memcpy` instead of aliasing them through `int *`. Optimized Android builds lost packed byte-sized normal/tangent offsets, causing reads from unwritten shader-stack slots and dark or banded shading. `add_node()` reuses `add_node_data()` so both paths preserve the object bytes. The unsafe casts originated upstream in `7ee94c067` (2026-04-09) and were already in the first Android commit; the first visibly affected APK is not established. Kernel auto-initialization, BVH2 fallback and instrumentation were removed. Nine final CPU renders match the official desktop reference within 3.75e-8 mean linear ROI error | [svm.h](intern/cycles/scene/svm.h) `SVMCompiler::add_node()`, `add_node_data()`, [render_regressions.py](build_files/android/tests/render_regressions.py), [ANDROID_RENDER_REGRESSION_STUDY.md](ANDROID_RENDER_REGRESSION_STUDY.md) |
 | GPU subdivision falls back to the CPU when the driver refuses the compute pipeline, instead of handing back empty buffers | [subdiv_modifier.cc](source/blender/blenkernel/intern/subdiv_modifier.cc), [GPU_capabilities.hh](source/blender/gpu/GPU_capabilities.hh), [draw_cache_impl_subdivision.cc](source/blender/draw/intern/draw_cache_impl_subdivision.cc) |
 | EEVEE shadow pool capped at 64 MB on Android regardless of system RAM, because the constraint is the GPU budget a mobile part shares with the device | [eevee_shadow.cc](source/blender/draw/engines/eevee/eevee_shadow.cc) |
 | GPU workarounds are no longer forced at startup. The flag skipped feature detection and left the Qualcomm tile memory extension off, worth 25% of the frame while orbiting | [GHOST_AndroidMain.cc](intern/ghost/intern/GHOST_AndroidMain.cc) |
@@ -473,7 +490,6 @@ first. The general form: a scale applies to a scope, so check what else is in th
 | Draco compressed glTF | [deps/build.sh](build_files/android/deps/build.sh), [package.sh](build_files/android/apk/package.sh) |
 | Internet access: the permission, a bundled certificate store, and an interpreter the extension system can run | [AndroidManifest.xml](build_files/android/apk/app/src/main/AndroidManifest.xml), [BlenderActivity.java](build_files/android/apk/app/src/main/java/org/blender/blender/BlenderActivity.java), [python/intern/CMakeLists.txt](source/blender/python/intern/CMakeLists.txt), [deps/build.sh](build_files/android/deps/build.sh) |
 | pip | [deps/build.sh](build_files/android/deps/build.sh) |
-| Remote asset libraries, including Online Essentials, are switched **off**. They cannot work: the listing downloader is built on `multiprocessing` with the 'spawn' start method, and `_multiprocessing` is not in this Python -- CPython refuses to build it without `sem_open`, which Bionic does not have (`ac_cv_func_sem_open=no`, `MODULE__MULTIPROCESSING_STATE=missing` in the CPython build). Even built it would fail at run time for the same reason, and 'spawn' re-runs `sys.executable`, which does not exist when Blender is a library inside a NativeActivity. Left alone the failure surfaced three steps from its cause, as "file does not exist: `_asset-library-meta.json`", because the C++ caller still carries a "TODO: report errors in the UI somehow". This is separate from the extension system, which does its own networking and works | [AS_remote_library.hh](source/blender/asset_system/AS_remote_library.hh) `remote_libraries_supported()`, [remote_library.cc](source/blender/asset_system/intern/library_types/remote_library.cc), [asset_library.cc](source/blender/asset_system/intern/asset_library.cc), [asset_library_service.cc](source/blender/asset_system/intern/asset_library_service.cc), [userpref_asset_libraries_list.cc](source/blender/editors/space_userpref/userpref_asset_libraries_list.cc), [bl_pkg/__init__.py](scripts/addons_core/bl_pkg/__init__.py) `remote_asset_library_sync()` |
 | Essentials assets, 49 translations, USD plugins | [package.sh](build_files/android/apk/package.sh), [GHOST_SystemPathsAndroid.cc](intern/ghost/intern/GHOST_SystemPathsAndroid.cc) |
 | Remote asset libraries, Online Essentials included -- where the default geometry, materials and node groups come from; the bundled `assets/` holds only brushes and node groups, the same in 5.2 and 5.3. The downloader runs on a thread on Android (`_ThreadContext`: no `_multiprocessing`, nothing to spawn), and requests, urllib3, idna, charset_normalizer, attrs and cattrs are bundled as pure-Python wheels. Downloads only with Online Access allowed | [downloader.py](scripts/modules/_bpy_internal/http/downloader.py), [AS_remote_library.hh](source/blender/asset_system/AS_remote_library.hh) `remote_libraries_supported()`, [deps/build.sh](build_files/android/deps/build.sh) `build_remote_asset_python_deps` |
 
@@ -542,6 +558,7 @@ reproduce each failure from the shell.
 | Document | Contents |
 | --- | --- |
 | [ANDROID_UPSTREAM_BETA2_STUDY.md](ANDROID_UPSTREAM_BETA2_STUDY.md) | The 18 upstream stability patches selected for Beta 2, the deferred Vulkan rewrite and device regression results |
+| [ANDROID_RENDER_REGRESSION_STUDY.md](ANDROID_RENDER_REGRESSION_STUDY.md) | EEVEE continuous-motion lighting, Qualcomm vertex input isolation, Cycles diagnostic results and device render checks |
 | [ANDROID_EDITOR_BORDER_GLITCH_STUDY.md](ANDROID_EDITOR_BORDER_GLITCH_STUDY.md) | Beta 2 editor separator background initialization, pixel measurements and S24 validation limits |
 | [ANDROID_CHANGELOG.md](ANDROID_CHANGELOG.md) | Every change with the commit that made it, as features, adjustments and fixes |
 | [ANDROID_WHATS_NEW.md](ANDROID_WHATS_NEW.md) | The same in plain language, one row per change |

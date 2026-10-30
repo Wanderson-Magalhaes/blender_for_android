@@ -742,6 +742,13 @@ void VKBackend::detect_workarounds(VKDevice &device)
    * presenting an otherwise healthy black frame. Prefer the spec-compatible monolithic pipeline
    * path on Android until the affected driver versions can be identified reliably. */
   extensions.graphics_pipeline_library = false;
+
+  /* Dynamic vertex input also corrupts attributes on Qualcomm's Android driver. EEVEE lighting
+   * changes abruptly during continuous orbiting as draw layouts change. Keep vertex input baked
+   * into the pipeline, matching the workaround for Qualcomm on Windows below. */
+  if (GPU_type_matches(GPU_DEVICE_QUALCOMM, GPU_OS_ANY, GPU_DRIVER_ANY)) {
+    extensions.vertex_input_dynamic_state = false;
+  }
 #endif
 
   /* Disable vertex input dynamic state for Qualcomm devices (#153414).
