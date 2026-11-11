@@ -247,6 +247,24 @@ build_brotli() {
   cmake_install "$src" brotli -DBROTLI_DISABLE_TESTS=ON
 }
 
+build_ktx() {
+  local v; v="$(dep_version KTX_VERSION)"
+  fetch "ktx-$v.tar.gz" "https://github.com/KhronosGroup/KTX-Software/archive/refs/tags/v$v.tar.gz"
+  printf '%s  %s\n' "$(dep_version KTX_HASH)" "$DL_DIR/ktx-$v.tar.gz" | sha256sum -c -
+  local src; src="$(extract "ktx-$v.tar.gz" ktx)"
+  patch -p1 -d "$src" < "$REPO_ROOT/build_files/build_environment/patches/ktx_zstd_dep_fix.diff"
+  patch -p1 -d "$src" < "$REPO_ROOT/build_files/build_environment/patches/ktx_asan.diff"
+  # Upstream KTX bounds the search for the needle's terminator by the haystack's
+  # length, which overreads short needles. Android aborts on it; see the patch.
+  patch -p1 -d "$src" < "$REPO_ROOT/build_files/build_environment/patches/ktx_strnstr_needle_bounds.diff"
+  cmake_install "$src" ktx \
+    -DKTX_FEATURE_TOOLS=OFF -DKTX_FEATURE_TESTS=OFF \
+    -DKTX_FEATURE_ETC_UNPACK=OFF -DKTX_FEATURE_STATIC_LIBRARY=OFF \
+    -DASTCENC_ISA_NEON=ON -DASTCENC_ISA_AVX2=OFF \
+    -DASTCENC_ISA_SSE41=OFF -DASTCENC_ISA_SSE2=OFF \
+    -Dzstd_ROOT="$LIBDIR/zstd"
+}
+
 build_freetype() {
   local v; v="$(dep_version FREETYPE_VERSION)"
   fetch "freetype-$v.tar.gz" "https://downloads.sourceforge.net/freetype/freetype-$v.tar.gz"
@@ -400,6 +418,7 @@ build_openimageio() {
   local v; v="$(dep_version OPENIMAGEIO_VERSION)"  # v3.1.13.1
   fetch "oiio-$v.tar.gz" "https://github.com/AcademySoftwareFoundation/OpenImageIO/archive/refs/tags/$v.tar.gz"
   local src; src="$(extract "oiio-$v.tar.gz" openimageio)"
+  patch -p1 -d "$src" < "$REPO_ROOT/build_files/build_environment/patches/openimageio_psd.diff"
   cmake_install "$src" openimageio \
     -DBUILD_SHARED_LIBS=ON \
     -DOIIO_BUILD_TESTS=OFF -DOIIO_BUILD_TOOLS=OFF \
@@ -1206,7 +1225,7 @@ build_oidn() {
 # lzma and bzip2 come before python so the interpreter picks up _lzma and _bz2,
 # and every consumer follows the libraries it links against.
 ALL_DEPS=(
-  zlib zstd deflate imath fmt tbb openexr png pugixml jpeg brotli freetype
+  zlib zstd deflate imath fmt tbb openexr png pugixml jpeg brotli ktx freetype
   harfbuzz webp tiff openjpeg expat yamlcpp blosc pystring minizipng
   opencolorio opensubdiv robinmap openimageio embree alembic materialx
   potrace gmp sqlite libffi openssl lzma bzip2 python openvdb ogg vorbis

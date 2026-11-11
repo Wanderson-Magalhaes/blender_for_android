@@ -24,12 +24,11 @@
 
 #include "BLI_map.hh"
 #include "BLI_span.hh"
+#include "BLI_vector.hh"
 
 #include "vk_common.hh"
 
 namespace blender::gpu {
-
-class VKDiscardPool;
 
 namespace render_graph {
 struct VKBeginRenderingData;
@@ -111,11 +110,11 @@ class VKRenderPassFallback {
                                 const render_graph::VKBeginRenderingData &data);
 
   /**
-   * Retire (into `pool`, deferred to its timeline) any cached framebuffer that
-   * references `vk_image_view`. Called when a view is discarded so a recycled
-   * view handle can't match a stale cached framebuffer.
+   * Remove cached framebuffers referencing a retired view. The caller owns their
+   * destruction and must wait for the same GPU timeline as the view. No discard
+   * pool is called while holding the cache mutex.
    */
-  void discard_framebuffers_for_view(VkImageView vk_image_view, VKDiscardPool &pool);
+  Vector<VkFramebuffer> take_framebuffers_for_view(VkImageView vk_image_view);
 
   int64_t render_pass_count() const
   {

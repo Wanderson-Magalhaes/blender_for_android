@@ -214,28 +214,27 @@ VkFramebuffer VKRenderPassFallback::framebuffer_get(
   });
 }
 
-void VKRenderPassFallback::discard_framebuffers_for_view(VkImageView vk_image_view,
-                                                         VKDiscardPool &pool)
+Vector<VkFramebuffer> VKRenderPassFallback::take_framebuffers_for_view(VkImageView vk_image_view)
 {
+  Vector<VkFramebuffer> retired;
   if (vk_device_ == VK_NULL_HANDLE || vk_image_view == VK_NULL_HANDLE) {
-    return;
+    return retired;
   }
+  std::scoped_lock lock(mutex_);
   Vector<FramebufferKey> to_remove;
-  {
-    std::scoped_lock lock(mutex_);
-    for (auto item : framebuffers_.items()) {
-      for (uint32_t i = 0; i < item.key.view_count; i++) {
-        if (item.key.views[i] == vk_image_view) {
-          pool.discard_framebuffer(item.value);
-          to_remove.append(item.key);
-          break;
-        }
+  for (auto item : framebuffers_.items()) {
+    for (uint32_t i = 0; i < item.key.view_count; i++) {
+      if (item.key.views[i] == vk_image_view) {
+        retired.append(item.value);
+        to_remove.append(item.key);
+        break;
       }
     }
-    for (const FramebufferKey &key : to_remove) {
-      framebuffers_.remove_contained(key);
-    }
   }
+  for (const FramebufferKey &key : to_remove) {
+    framebuffers_.remove_contained(key);
+  }
+  return retired;
 }
 
 void VKRenderPassFallback::deinit()

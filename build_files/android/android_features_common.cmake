@@ -49,3 +49,11 @@ set(WITH_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(WITH_FRIBIDI ON CACHE BOOL "" FORCE)
 set(WITH_POTRACE ON CACHE BOOL "" FORCE)
 set(WITH_IO_WAVEFRONT_OBJ ON CACHE BOOL "" FORCE)
+
+# The glTF KTX bridge is a runtime library, not a code-generator dependency.
+# Native host generators do not load it; the Android target ships ARM64 KTX.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  set(WITH_KTX ON CACHE BOOL "" FORCE)
+else()
+  set(WITH_KTX OFF CACHE BOOL "" FORCE)
+endif()

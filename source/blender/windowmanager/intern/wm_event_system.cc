@@ -636,7 +636,7 @@ void wm_event_do_notifiers(bContext *C)
           wm->file_saved = 1;
           WM_window_title_refresh(wm, &win);
         }
-        else if (note->data == ND_DATACHANGED) {
+        else if (ELEM(note->data, ND_DATACHANGED, ND_PROJECT_CHANGED)) {
           WM_window_title_refresh(wm, &win);
         }
         else if (note->data == ND_UNDO) {
@@ -2894,8 +2894,12 @@ static eHandlerActionFlag wm_handler_fileselect_do(bContext *C,
 
   switch (val) {
     case EVT_FILESELECT_FULL_OPEN: {
+      /* Maximized file browser does not work for file browsing from popups, as switching the
+       * screen closes it. */
+      const int display_type = handler->is_fileselect_keep_popup ? USER_TEMP_SPACE_DISPLAY_WINDOW :
+                                                                   U.filebrowser_display_type;
       ScrArea *area = ED_screen_temp_space_open(
-          C, IFACE_("Blender File View"), SPACE_FILE, U.filebrowser_display_type, true);
+          C, IFACE_("Blender File View"), SPACE_FILE, display_type, true);
       if (!area) {
         BKE_report(&wm->runtime->reports, RPT_ERROR, "Failed to open file browser!");
         return WM_HANDLER_BREAK;
@@ -4734,6 +4738,8 @@ void WM_event_add_fileselect(bContext *C, wmOperator *op)
   handler->head.type = WM_HANDLER_TYPE_OP;
 
   handler->is_fileselect = true;
+  handler->is_fileselect_keep_popup = ui::popup_region_from_operator(CTX_wm_screen(C),
+                                                                     CTX_wm_region_popup(C));
   handler->op = op;
   handler->context.win = root_win;
   handler->context.area = root_area;

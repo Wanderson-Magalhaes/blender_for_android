@@ -311,7 +311,10 @@ void BKE_collection_blend_write_nolib(BlendWriter *writer, Collection *collectio
     writer->write_struct(&child);
   }
 
-  writer->write_struct(collection->importer);
+  writer->write_struct(collection->importer,
+                       [](BlendStructWriter<CollectionImport> &struct_writer) {
+                         struct_writer.shallow_data.runtime = nullptr;
+                       });
   if (collection->importer && collection->importer->import_properties) {
     IDP_BlendWrite(writer, collection->importer->import_properties);
   }
@@ -438,7 +441,7 @@ static void collection_blend_read_after_liblink(BlendLibReader * /*reader*/, ID 
 IDTypeInfo IDType_ID_GR = {
     .id_code = Collection::id_type,
     .id_filter = FILTER_ID_GR,
-    .dependencies_id_types = FILTER_ID_OB | FILTER_ID_GR,
+    .dependencies_id_types = FILTER_ID_OB | FILTER_ID_GR | FILTER_ID_LI,
     .main_listbase_index = INDEX_ID_GR,
     .struct_size = sizeof(Collection),
     .name = "Collection",

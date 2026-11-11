@@ -6,7 +6,10 @@ ANDROID_CHANGELOG.md.
 
 | Type | Change | What it means for you |
 | --- | --- | --- |
-| Adjusted | Installed app version | Android app information now shows Blender 5.3 Beta, matching the version running inside the app. |
+| New | Blender 5.3 final | This build is the released Blender 5.3 rather than the beta, with everything fixed upstream between the two. Your files keep working; files saved here are written in the release format. |
+| New | Compressed glTF textures | glTF and GLB files whose textures are compressed with Basis Universal (KTX2) now open with their images, and you can export in that format too. These files are several times smaller than the same model with ordinary PNG or JPEG textures. Before, the textures came in blank. |
+| Fixed | Exporting glTF with compressed textures | Exporting with KTX2 texture compression closed the app instantly. It now completes. |
+| Adjusted | Installed app version | Android app information now shows Blender 5.3.0, matching the version running inside the app. |
 | New | Render checks before release | Full releases must pass Cycles image checks and an EEVEE test while the view moves, helping catch dark shading, horizontal bands and unstable lighting before an APK is released. |
 | Fixed (Beta 2) | Cycles lighting | Cycles renders the scene with consistent lighting again, without the dark faces and horizontal bands caused by corrupted material data. |
 | Fixed (Beta 2) | Rendering while navigating | EEVEE lighting stays stable while rotating the view on Qualcomm phones. |

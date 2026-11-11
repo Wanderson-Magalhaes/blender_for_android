@@ -279,6 +279,15 @@ if(WITH_DRACO)
   set_and_warn_library_found("Draco" DRACO_FOUND WITH_DRACO)
 endif()
 
+if(WITH_KTX)
+  set(Ktx_ROOT ${LIBDIR}/ktx)
+  find_package(Ktx CONFIG REQUIRED)
+  if(NOT TARGET KTX::ktx)
+    message(FATAL_ERROR "Android KTX package did not provide KTX::ktx")
+  endif()
+  set(KTX_FOUND TRUE)
+endif()
+
 if(WITH_OPENIMAGEDENOISE)
   # Blender's FindOpenImageDenoise looks for a single shared library, but the
   # Android build is static and split across core/device/common/weights

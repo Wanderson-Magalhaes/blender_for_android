@@ -8,11 +8,34 @@ because nothing in a snapshot-seeded history records it otherwise.
 
 | | |
 | --- | --- |
-| Tracking | `blender-v5.3-release` (5.3 **beta**), not `main` |
-| Last synced upstream commit | `fefcb557` "Fix: UI: Crash when interacting with menus after losing focus" (2026-10-14) |
-| Synthetic parent in history | `b28ade62` = that tree minus `tests/files` |
+| Tracking | `v5.3.0`, the released tag, not `main` |
+| Last synced upstream commit | `02f0899d7` = tag `v5.3.0` (2026-11-10) |
+| Previous complete anchor | `fefcb557` "Fix: UI: Crash when interacting with menus after losing focus" (2026-10-14), synthetic parent `b28ade62` |
 | Original anchor | `b73c4e89` "Fix: IME positioning in the sequencer applied aspect twice" (2026-07-30) |
-| File version after sync | 5.3 beta, subversion 29 |
+| File version after sync | 5.3.0 release, subversion 31 |
+
+A subversion change needs `build.py --reconfigure`. The fast path swaps
+`libblender.so` and leaves the host generators alone, and a binary that disagrees
+with its generated DNA/RNA dies before `android_main` logs anything.
+
+## The 5.3 final sync (2026-11-10)
+
+543 upstream commits from the `fefcb557` anchor to the `v5.3.0` tag, in `cbd1c14e6`.
+
+Correctness was established by diffing the integrated tree against the tag, not by
+the merge applying cleanly. Every file the update adds is byte-for-byte identical to
+upstream, `intern/ktx_bridge/` and the `ktx_asan.diff` / `openimageio_psd.diff`
+patches included; `build_files/build_environment/cmake/versions.cmake` has no fork
+delta at all, so the KTX, pip, certifi and Brotli pins are upstream's. Divergence
+from the tag fell from 8342 files to 135 real content differences, all in files this
+port owns. The 7319 remaining absences are `tests/files`, which this checkout does
+not fetch.
+
+One upstream restructuring had to be adapted rather than merged: image-view
+retirement moved out of `VKImageView`'s destructor, which this port's render-pass
+fallback depended on for invalidating its framebuffer cache. See
+[ANDROID_UPSTREAM_5_3_FINAL_STUDY.md](ANDROID_UPSTREAM_5_3_FINAL_STUDY.md) for that
+analysis, the KTX overread it uncovered and the device results.
 
 ## Selective Beta 2 stability backports (2026-10-29)
 

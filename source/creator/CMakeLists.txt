@@ -515,7 +515,9 @@ if(WITH_PYTHON)
   # Install beside their bundled dependencies, found via each target's RPATH (UNIX)
   # or the `blender.shared` side-by-side assembly (WIN32).
   # Non-portable installs (UNIX system installs) place them beside the add-on.
-  if(WITH_INSTALL_PORTABLE)
+  # A Python module has no system libraries path, so it bundles them like a portable install,
+  # matching the lookup in the add-on's `library.py`.
+  if(WITH_INSTALL_PORTABLE OR WITH_PYTHON_MODULE)
     set(GLTF_BRIDGE_INSTALL_DIR "${TARGETDIR_LIB}")
   else()
     set(GLTF_BRIDGE_INSTALL_DIR "${TARGETDIR_VER_LIBS}/scripts/addons_core/io_scene_gltf2")
@@ -553,6 +555,24 @@ if(WITH_PYTHON)
     endif()
     install(
       PROGRAMS $<TARGET_FILE:bf_intern_meshopt_bridge>
+      DESTINATION ${GLTF_BRIDGE_INSTALL_DIR}
+    )
+  endif()
+
+  if(WITH_KTX)
+    if(ANDROID)
+      # Android packages without running cmake --install. Build the dlopened
+      # bridge even when build.py/fastdeploy requests only the blender target.
+      add_dependencies(blender bf_intern_ktx_bridge)
+    endif()
+    if(GLTF_BRIDGE_RPATH)
+      set_target_properties(bf_intern_ktx_bridge PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "${GLTF_BRIDGE_RPATH}"
+      )
+    endif()
+    install(
+      PROGRAMS $<TARGET_FILE:bf_intern_ktx_bridge>
       DESTINATION ${GLTF_BRIDGE_INSTALL_DIR}
     )
   endif()
@@ -1731,6 +1751,11 @@ elseif(WIN32)
   windows_install_shared_manifest(
     FILES ${LIBDIR}/draco/bin/draco_d.dll
     DEBUG
+  )
+
+  windows_install_shared_manifest(
+    FILES ${LIBDIR}/ktx/bin/ktx.dll
+    ALL
   )
 
   windows_install_shared_manifest(

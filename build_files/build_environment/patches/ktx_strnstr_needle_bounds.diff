@@ -1,0 +1,31 @@
+--- a/lib/writer2.c
++++ b/lib/writer2.c
+@@ -76,17 +76,19 @@
+ {
+     size_t i;
+     size_t needleLen;
+-    const char* needleEnd;
+ 
+-    // strnlen is not part of the C standard and does not compile on some platforms, 
+-    // use case is covered by memchr.
+-    needleEnd = (char *)memchr(needle, 0, len);
+-    if (needleEnd == needle)
++    // `len` is the length of the haystack, not of the needle. Bounding the search
++    // for the needle's terminator by it reads past the end of any needle shorter
++    // than the haystack: appendLibId() passes the 12-byte literal "__default__"
++    // with len 17 for an absent KTXwriter value. Android's FORTIFY memchr aborts
++    // the process on that read; glibc merely reads adjacent memory and happens to
++    // get away with it. Every needle passed here is a NUL-terminated C string, so
++    // measure it on its own.
++    needleLen = strlen(needle);
++    if (needleLen == 0)
+         return (char *)haystack;
+-
+-    needleLen = len;
+-    if (needleEnd != NULL)
+-        needleLen = needleEnd - needle;
++    if (needleLen > len)
++        return NULL;
+ 
+     for (i = 0; i <= len - needleLen; i++)
+     {

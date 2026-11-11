@@ -564,6 +564,15 @@ void wm_window_close(bContext *C, wmWindowManager *wm, wmWindow *win)
   WM_main_add_notifier(NC_WINDOW | NA_REMOVED, nullptr);
 }
 
+/** If a project is active, append its name to `win_title`. */
+static void wm_window_title_project_append(fmt::memory_buffer &win_title)
+{
+  if (const bke::BlenderProject *project = BKE_blender_project_get(G_MAIN)) {
+    win_title.append(StringRef(" - "));
+    win_title.append(project->get_name());
+  }
+}
+
 /**
  * Construct the title text for `win`.
  * The window may *not* have been created, any calls depending on `win->runtime->ghostwin` are
@@ -586,6 +595,11 @@ static void wm_window_title_text(wmWindowManager *wm,
     ScrArea *area = (screen) ? screen->areabase.first() : nullptr;
     if (is_single && area && area->spacetype != SPACE_EMPTY) {
       win_title.append(StringRef(IFACE_(ED_area_name(area).c_str())));
+
+      /* Append the project name to the Project Settings editor. */
+      if (area->spacetype == SPACE_PROJECT) {
+        wm_window_title_project_append(win_title);
+      }
     }
     else {
       win_title.append(StringRef("Blender"));
@@ -680,10 +694,7 @@ static void wm_window_title_text(wmWindowManager *wm,
   }
 
   /* If a project is active, display its name. */
-  if (const bke::BlenderProject *project = BKE_blender_project_get(G_MAIN)) {
-    win_title.append(StringRef(" - "));
-    win_title.append(project->get_name());
-  }
+  wm_window_title_project_append(win_title);
 
   win_title.append(StringRef(" — Blender "));
   win_title.append(StringRef(BKE_blender_version_string()));
@@ -1007,6 +1018,9 @@ static void wm_window_ghostwindow_add(wmWindowManager *wm,
 
   if (G.debug & G_DEBUG_GPU) {
     gpu_settings.flags |= GHOST_gpuDebugContext;
+  }
+  if (G.debug & G_DEBUG_GPU_NO_HW_RAYTRACING) {
+    gpu_settings.flags |= GHOST_gpuNoHWRaytracing;
   }
 
   GPUBackendType gpu_backend = GPU_backend_type_selection_get();
@@ -3571,12 +3585,14 @@ bool WM_window_IME_region_refresh(wmWindow *win,
 
   /* A temporary popup is modal, it takes precedence over the region below it,
    * otherwise any redraw while the popup is open re-enables the IME, see #ED_region_do_draw.
-   * Tool-tips match too, harmless as an existing session isn't ended. */
+   * Tool-tips are excluded, they take no input and may outlive the cursor leaving
+   * their region (gizmo tool-tips for e.g.), which would prevent beginning the IME. */
   const bScreen *screen = WM_window_get_active_screen(win);
-  if (!screen->regionbase.is_empty() &&
-      (BKE_screen_find_region_type(screen, RGN_TYPE_TEMPORARY) != nullptr))
-  {
-    return false;
+  const ARegion *tooltip_region = screen->tool_tip ? screen->tool_tip->region : nullptr;
+  for (const ARegion &region_iter : screen->regionbase) {
+    if ((region_iter.regiontype == RGN_TYPE_TEMPORARY) && (&region_iter != tooltip_region)) {
+      return false;
+    }
   }
 
   /* NOTE: ending mid-composition cancels it, so the draw-time refresh opts out via
@@ -3702,6 +3718,9 @@ GHOST_IContext *WM_system_gpu_context_create()
   gpu_settings.context_type = wm_ghost_drawing_context_type(gpu_backend);
   if (G.debug & G_DEBUG_GPU) {
     gpu_settings.flags |= GHOST_gpuDebugContext;
+  }
+  if (G.debug & G_DEBUG_GPU_NO_HW_RAYTRACING) {
+    gpu_settings.flags |= GHOST_gpuNoHWRaytracing;
   }
   gpu_settings.preferred_device = GPU_backend_preferred_device_get();
   if (GPU_backend_vsync_is_overridden()) {

@@ -629,8 +629,6 @@ static void BLI_path_add_slash_to_share(wchar_t *uncpath)
 
 static void BLI_path_unc_to_short(wchar_t *unc)
 {
-  wchar_t tmp[PATH_MAX];
-
   int len = wcslen(unc);
   /* Convert:
    * - `\\?\UNC\server\share\folder\...` to `\\server\share\folder\...`
@@ -640,17 +638,13 @@ static void BLI_path_unc_to_short(wchar_t *unc)
   if ((len > 3) && (unc[0] == L'\\') && (unc[1] == L'\\') && (unc[2] == L'?') &&
       ELEM(unc[3], L'\\', L'/'))
   {
+    /* The result is always shorter, shift the text in place (+1 for the terminator). */
     if ((len > 5) && (unc[5] == L':')) {
-      wcsncpy(tmp, unc + 4, len - 4);
-      tmp[len - 4] = L'\0';
-      wcscpy(unc, tmp);
+      memmove(unc, unc + 4, (len - 4 + 1) * sizeof(*unc));
     }
     else if ((len > 7) && (wcsncmp(&unc[4], L"UNC", 3) == 0) && ELEM(unc[7], L'\\', L'/')) {
-      tmp[0] = L'\\';
-      tmp[1] = L'\\';
-      wcsncpy(tmp + 2, unc + 8, len - 8);
-      tmp[len - 6] = L'\0';
-      wcscpy(unc, tmp);
+      /* Keep the leading `\\`. */
+      memmove(unc + 2, unc + 8, (len - 8 + 1) * sizeof(*unc));
     }
   }
 }
@@ -660,6 +654,7 @@ void BLI_path_normalize_unc(char *path, int path_maxncpy)
   wchar_t *tmp_16 = alloc_utf16_from_8(path, 1);
   BLI_path_normalize_unc_16(tmp_16);
   conv_utf_16_to_8(tmp_16, path, path_maxncpy);
+  free(tmp_16);
 }
 
 void BLI_path_normalize_unc_16(wchar_t *path_16)
@@ -887,7 +882,7 @@ const char *BLI_path_parent_dir_end(const char *path, size_t path_len)
     if (BLI_path_slash_is_native_compat(*(p - 1))) {
       p -= 1; /* Skip `/`. */
     }
-    else if ((p + 1 > path) && (*(p - 1) == '.') && BLI_path_slash_is_native_compat(*p - 2)) {
+    else if ((p - 1 > path) && (*(p - 1) == '.') && BLI_path_slash_is_native_compat(*(p - 2))) {
       p -= 2; /* Skip `/.` (actually `/./` but the last slash was already skipped) */
     }
     else {
@@ -1249,8 +1244,9 @@ bool BLI_path_abs(char path[FILE_MAX], const char *basepath)
       BLI_strncpy(path, tmp, FILE_MAX);                        /* Return as result. */
     }
     else {
-      /* Base doesn't seem to be a directory, ignore it and just strip `//` prefix on path. */
-      BLI_strncpy(path, tmp + 2, FILE_MAX);
+      /* Base doesn't seem to be a directory, ignore it and just strip `//` prefix on path.
+       * Skip any extra slashes too, otherwise `///` would become an absolute path. */
+      BLI_strncpy(path, BLI_path_slash_skip(tmp + 2), FILE_MAX);
     }
   }
   else {
@@ -1779,8 +1775,8 @@ size_t BLI_path_join_array(char *__restrict dst,
     if (i == ofs) {
       /* All slashes, keep them as-is, and join the remaining path array. */
       return path_array_num > 1 ?
-                 BLI_path_join_array(
-                     dst + ofs, dst_maxncpy - ofs, &path_array[1], path_array_num - 1) :
+                 ofs + BLI_path_join_array(
+                           dst + ofs, dst_maxncpy - ofs, &path_array[1], path_array_num - 1) :
                  ofs;
     }
   }

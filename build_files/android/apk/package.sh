@@ -143,7 +143,7 @@ fi
 # `dll_path()` in the add-on's `io/com/library.py`. GHOST_SystemPathsAndroid
 # points SYSTEM_LIBS at the payload root, which is what makes that resolve.
 # Plain glTF works without it; only compression needs the bridge.
-for bridge in meshopt draco; do
+for bridge in meshopt draco ktx; do
   so="$BUILD/lib/libbf_intern_${bridge}_bridge.so"
   if [ -f "$so" ]; then
     dest="$PAYLOAD/scripts/addons_core/io_scene_gltf2/libbf_intern_${bridge}_bridge.so"
@@ -154,6 +154,12 @@ for bridge in meshopt draco; do
     echo "[apk] bundled the glTF $bridge bridge ($(du -h "$dest" | cut -f1))"
   fi
 done
+
+if grep -q '^WITH_KTX:BOOL=ON$' "$BUILD/CMakeCache.txt" &&
+   [ ! -f "$PAYLOAD/scripts/addons_core/io_scene_gltf2/libbf_intern_ktx_bridge.so" ]; then
+  echo "[apk] ERROR: KTX enabled but its glTF bridge is missing" >&2
+  exit 1
+fi
 
 # USD finds its file-format plugins through the plugInfo.json files here, so
 # without them the importers and exporters are built but never register.
@@ -191,7 +197,8 @@ fi
 changed=1
 while [ "$changed" = 1 ]; do
   changed=0
-  for cur in "$JNI"/*.so; do
+  for cur in "$JNI"/*.so "$PAYLOAD"/scripts/addons_core/io_scene_gltf2/libbf_intern_*_bridge.so; do
+    [ -f "$cur" ] || continue
     for need in $(readelf_needed "$cur"); do
       case "$need" in lib*.so|lib*.so.*) ;; *) continue;; esac
       base="$(unversion "$need")"
@@ -220,6 +227,11 @@ patch_unversion() {
   done
 }
 for so in "$JNI"/*.so; do patch_unversion "$so"; done
+# glTF bridges are loaded from the runtime payload. Their dependencies are in
+# jniLibs, where Android requires unversioned names as well.
+for so in "$PAYLOAD"/scripts/addons_core/io_scene_gltf2/libbf_intern_*_bridge.so; do
+  [ -f "$so" ] && patch_unversion "$so"
+done
 # Python extension modules load from filesDir but resolve NEEDED via jniLibs.
 if [ -d "$PAYLOAD/python" ]; then
   for so in $(find "$PAYLOAD/python" -name '*.so'); do

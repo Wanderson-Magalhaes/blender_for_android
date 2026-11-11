@@ -63,6 +63,8 @@ bool GPU_subdivision_evaluation_broken();
 void GPU_subdivision_evaluation_set_broken();
 bool GPU_use_main_context_workaround();
 bool GPU_use_hq_normals_workaround();
+/** When true, the front-buffer cannot be read from (unsupported configuration). */
+bool GPU_frontbuffer_read_workaround();
 
 bool GPU_geometry_shader_support();
 bool GPU_hdr_support();

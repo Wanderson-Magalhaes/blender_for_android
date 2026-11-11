@@ -394,7 +394,7 @@ static void file_listener(const wmSpaceTypeListenerParams *listener_params)
   /* context changes */
   switch (wmn->category) {
     case NC_UI:
-      if (wmn->data == ND_UI_LANG && sfile) {
+      if (wmn->data == ND_UI_LANG && sfile && sfile->files) {
         filelist_tag_force_reset(sfile->files);
       }
       break;
@@ -1038,6 +1038,7 @@ void ED_spacetype_file()
 
   st->spaceid = SPACE_FILE;
   STRNCPY_UTF8(st->name, "File");
+  st->struct_size = sizeof(SpaceFile);
 
   st->create = file_create;
   st->free = file_free;
