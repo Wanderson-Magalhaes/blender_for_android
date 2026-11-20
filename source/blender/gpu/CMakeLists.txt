@@ -527,6 +527,14 @@ if(WITH_VULKAN_BACKEND)
     extern_vulkan_memory_allocator
   )
 
+  if(ANDROID_ADRENOTOOLS_LIBRARIES)
+    list(APPEND LIB PRIVATE ${ANDROID_ADRENOTOOLS_LIBRARIES})
+    set_source_files_properties(vulkan/vk_backend.cc PROPERTIES
+      COMPILE_DEFINITIONS WITH_ADRENOTOOLS
+      COMPILE_OPTIONS "-isystem${ANDROID_ADRENOTOOLS_INCLUDE_DIR}"
+    )
+  endif()
+
   add_definitions(-DWITH_VULKAN_BACKEND)
 endif()
 

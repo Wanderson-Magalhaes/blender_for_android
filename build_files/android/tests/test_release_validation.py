@@ -30,7 +30,8 @@ def good_report(apk):
              ["cycles_cold", "eevee_final"] + ["cycles_after_viewport_" + str(i) for i in range(8)]}
     return {"passed": True, "apk_sha256": runner.sha256(apk),
             "device_tests": {"complete": True, "passed": True, "tests": tests},
-            "eevee_motion": runner.approve_motion(good_motion())}
+            "eevee_motion": runner.approve_motion(good_motion()),
+            "eevee_shadows": {name: {"passed": True} for name in ("viewport", "render")}}
 
 
 class MotionTests(unittest.TestCase):
@@ -64,6 +65,19 @@ class MotionTests(unittest.TestCase):
         self.assertFalse(runner.motion_sample(image, state, state, expected)["passed"])
 
 
+class ShadowTests(unittest.TestCase):
+    def test_cast_shadow_darkens_only_the_expected_part_of_the_plane(self):
+        on = {"shadow": [0.05] * 3, "lit": [0.6] * 3}
+        off = {"shadow": [0.5] * 3, "lit": [0.6] * 3}
+        self.assertTrue(runner.approve_shadows(on, off)["passed"])
+
+    def test_missing_shadows_and_global_darkening_fail(self):
+        off = {"shadow": [0.5] * 3, "lit": [0.6] * 3}
+        self.assertFalse(runner.approve_shadows(off, off)["passed"])
+        dark = {"shadow": [0.05] * 3, "lit": [0.15] * 3}
+        self.assertFalse(runner.approve_shadows(dark, off)["passed"])
+
+
 class PromotionTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -86,6 +100,12 @@ class PromotionTests(unittest.TestCase):
             lambda r: r["device_tests"]["tests"].pop("cycles_after_viewport_7"),
             lambda r: r["device_tests"]["tests"]["cycles_cold"].update(passed=False),
             lambda r: r["eevee_motion"].update(passed=False),
+            lambda r: r.update(expects_turnip=True),
+            lambda r: r.pop("eevee_shadows"),
+            lambda r: r["eevee_shadows"].pop("viewport"),
+            lambda r: r["eevee_shadows"].pop("render"),
+            lambda r: r["eevee_shadows"]["viewport"].update(passed=False),
+            lambda r: r["eevee_shadows"]["render"].update(passed=False),
             lambda r: r.update(apk_sha256="stale hash"),
         )
         for change in changes:
@@ -95,6 +115,14 @@ class PromotionTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     promote(self.apk, report, self.releases)
                 self.assertFalse(self.releases.exists())
+
+    def test_passing_turnip_render_checks_cannot_promote(self):
+        report = good_report(self.apk)
+        report["expects_turnip"] = True
+        report["device_tests"]["gpu"] = {"driver": "turnip Mesa driver Mesa 26.2.3"}
+        with self.assertRaisesRegex(RuntimeError, "experimental"):
+            promote(self.apk, report, self.releases)
+        self.assertFalse(self.releases.exists())
 
     def test_apk_changed_after_test_is_rejected(self):
         report = good_report(self.apk)
@@ -133,6 +161,7 @@ class PromotionTests(unittest.TestCase):
         with (patch.object(sys, "argv", argv),
               patch.object(runner, "preflight", side_effect=lambda *a: events.append("preflight")),
               patch.object(build, "build", side_effect=lambda *a, **k: events.append(("build", k))),
+              patch.object(build, "apk_artifact_stem", return_value="Blender-Android-5.3.1-Full-Standard"),
               patch("release_validation.validate_release", side_effect=RuntimeError("blocked")),
               patch.object(build, "archive_apk") as archive):
             with self.assertRaisesRegex(RuntimeError, "blocked"):

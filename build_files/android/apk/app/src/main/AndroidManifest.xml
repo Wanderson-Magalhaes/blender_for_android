@@ -3,8 +3,8 @@
      SPDX-License-Identifier: GPL-2.0-or-later -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.blender.blender"
-    android:versionCode="5030001"
-    android:versionName="5.3.0 (S24 Ultra)">
+    android:versionCode="5030101"
+    android:versionName="5.3.1 (S24 Ultra)">
 
     <!-- Vulkan is used at runtime; not required so it installs on emulators too. -->
     <uses-feature android:name="android.hardware.vulkan.version"

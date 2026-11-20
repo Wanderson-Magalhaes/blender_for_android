@@ -42,7 +42,14 @@ cp "$ANDROID_SYSROOT/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI/"
 TURNIP="$LIBDIR/turnip/lib/libvulkan_turnip.so"
 # Shipping the driver is what turns Turnip on at runtime, so only the Turnip
 # flavour of the APK may carry it.
-if [ "${BLENDER_ANDROID_TURNIP:-0}" = "1" ] && [ -f "$TURNIP" ]; then
+if [ "${BLENDER_ANDROID_TURNIP:-0}" = "1" ]; then
+  if [ ! -f "$TURNIP" ] || ! grep -aqF "blender-turnip" "$JNI/libblender.so"; then
+    echo "[apk] Turnip driver or compiled loader missing. Prepare Turnip dependencies first." >&2
+    exit 1
+  fi
+  for hook in hook_impl file_redirect_hook gsl_alloc_hook main_hook; do
+    cp "$LIBDIR/adrenotools/hooks/lib$hook.so" "$JNI/"
+  done
   cp "$TURNIP" "$JNI/"
   patchelf --set-soname libvulkan_turnip.so "$JNI/libvulkan_turnip.so"
 
@@ -55,12 +62,7 @@ if [ "${BLENDER_ANDROID_TURNIP:-0}" = "1" ] && [ -f "$TURNIP" ]; then
     "$CLANG" -shared -fPIC -O2 -DSHIM_"${part%%:*}" -o "$JNI/$out" "$SHIM_SRC" \
       -Wl,-soname,"$out"
   done
-  echo "[apk] bundled Mesa Turnip driver + platform shims"
-fi
-
-if [ -d "$LIBDIR/adrenotools/hooks" ]; then
-  cp "$LIBDIR"/adrenotools/hooks/*.so "$JNI/"
-  echo "[apk] bundled adrenotools hooks (Turnip support)"
+  echo "[apk] bundled Mesa Turnip driver, platform shims and adrenotools hooks"
 fi
 
 # The Python interpreter, shipped so `sys.executable` is real. Blender's

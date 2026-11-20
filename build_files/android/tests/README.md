@@ -1,9 +1,11 @@
 # Android render gate before full releases
 
-Every full release must use build.py --release. Normal build/fastdeploy APKs are
+Every standard full release must use build.py --release. Normal build/fastdeploy APKs are
 development artifacts and have no render approval. Only a passing exact signed
 candidate is copied into $BUILD_BASE/apk/releases with matching .render-check.json.
 Failed, missing or incomplete checks return nonzero and create no new release APK.
+Experimental Turnip APKs can run the same checks with run_render_regressions.py.
+They are archived separately with their Mesa version in the filename.
 
 ## Independent official reference
 
@@ -59,11 +61,17 @@ Changing APK bytes invalidates the approval.
   Compare display RGB with the official CPU rendering. At least 24 distinct motion
   samples must span 30 seconds and 0.60 radians. Any sampled face error >= 0.10
   blocks release. Capturing only after motion stops cannot pass.
+* EEVEE cast shadows from a cube onto the plane below, in the composed viewport
+  and final render. For each pair, toggle only the point light's shadows.
+  The expected shadow region must darken by at least 0.20 in mean display RGB
+  (0–1), while the lit control patch stays within 0.03 per channel. Both pairs
+  must pass, and all four PNGs are retained.
+* A candidate bundling Mesa Turnip must report Turnip as the active GPU driver.
 * Reference/fixture checksums, complete output, matching candidate APK checksum.
   Missing tools/reference/device, crashes, timeouts, missing capture or failed
   evidence collection block approval.
 
-This gate covers the two known regressions on the tested device/driver. It is not
+This gate covers the known render regressions on the tested device/driver. It is not
 exhaustive coverage of all scenes, materials, GPUs or drivers. Validate each intended
 device/driver; one device's pass is not universal compatibility.
 Lite omits Cycles and is not accepted by this full gate.

@@ -1051,6 +1051,7 @@ Before publishing, use `python3 build_files/android/build.py full --release
 --render-reference /path/to/official-render-reference -s DEVICE_SERIAL`.
 Publish only an APK and matching `.render-check.json` from
 `$BUILD_BASE/apk/releases`. The command repackages and tests the exact signed
-candidate, including EEVEE in motion; incomplete validation fails.
+candidate. EEVEE must pass both the live orbit and the cube's cast shadow on a
+plane in the viewport and final render. Incomplete validation fails.
 See [tests/README.md](build_files/android/tests/README.md) for reference generation,
 prerequisites, individual APK checks and the known-bad control.

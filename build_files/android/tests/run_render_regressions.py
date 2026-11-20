@@ -6,7 +6,7 @@
 """Validate one exact APK on a named Android device. No clear/uninstall or saved preferences.
 
 Requires an official desktop reference made by create_render_reference.py, adb and ffmpeg.
-Exit 0 means CPU renders AND composed EEVEE frames during continuous motion passed.
+Exit 0 requires passing CPU renders, EEVEE motion and EEVEE cast shadows.
 Missing prerequisites, missing frames, stale results, crashes and timeouts fail closed.
 """
 
@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import uuid
+from zipfile import ZipFile
 
 HERE = Path(__file__).resolve().parent
 PACKAGE = "org.blender.blender"
@@ -32,6 +33,8 @@ FILES = "/sdcard/Android/data/" + PACKAGE + "/files"
 ARGS_FILE = FILES + "/blender_args.txt"
 MOTION_LIMIT = 0.10  # Mean display-RGB error at each face center, against official CPU reference.
 MIN_CAPTURES = 24
+SHADOW_MIN_DROP = 0.20
+SHADOW_MAX_LIT_CHANGE = 0.03
 
 
 def sha256(path):
@@ -145,7 +148,7 @@ def sample_rgb(image, point, radius=2):
     width, height, rgb = image
     x, y = map(round, point)
     if not (radius <= x < width - radius and radius <= y < height - radius):
-        raise RuntimeError("Face sample fell outside the composed image")
+        raise RuntimeError("Sample fell outside the image")
     return [
         statistics.median(rgb[((yy * width + xx) * 3) + channel]
                           for yy in range(y - radius, y + radius + 1)
@@ -184,6 +187,25 @@ def approve_motion(samples):
             "limit": MOTION_LIMIT}
 
 
+def approve_shadows(on, off):
+    # Samples are display RGB in [0, 1]. The lit point is a control on the same plane.
+    shadow_drop = statistics.mean(off["shadow"]) - statistics.mean(on["shadow"])
+    lit_change = max(abs(a - b) for a, b in zip(on["lit"], off["lit"]))
+    return {"passed": (shadow_drop >= SHADOW_MIN_DROP
+                       and statistics.mean(off["lit"]) >= SHADOW_MIN_DROP
+                       and lit_change <= SHADOW_MAX_LIT_CHANGE),
+            "shadow_drop": shadow_drop, "lit_change": lit_change, "on": on, "off": off}
+
+
+def shadow_sample(image, points, *, window_size=None):
+    if window_size:
+        width, height, _ = image
+        if width != window_size[0]:
+            raise RuntimeError("Display size changed during shadow capture")
+        points = {name: (x, height - y) for name, (x, y) in points.items()}
+    return {name: sample_rgb(image, points[name], radius=4) for name in ("shadow", "lit")}
+
+
 def preflight(reference, serial, adb=None, ffmpeg=None):
     manifest = check_reference(reference)
     device = Device(find_tool("adb", adb), serial)
@@ -198,7 +220,7 @@ def preflight(reference, serial, adb=None, ffmpeg=None):
 def run_candidate(apk, reference, output, serial, *, adb=None, ffmpeg=None, timeout=300):
     apk, reference, output = map(lambda p: Path(p).resolve(), (apk, reference, output))
     output.mkdir(parents=True, exist_ok=False)
-    report = {"schema": 1, "passed": False, "apk": str(apk), "serial": serial,
+    report = {"schema": 2, "passed": False, "apk": str(apk), "serial": serial,
               "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "samples": []}
     device = None
@@ -210,6 +232,9 @@ def run_candidate(apk, reference, output, serial, *, adb=None, ffmpeg=None, time
         report["apk_sha256"] = sha256(apk)
         device, decoder, manifest = preflight(reference, serial, adb, ffmpeg)
         report["reference"] = manifest
+        with ZipFile(apk) as archive:
+            expects_turnip = "lib/arm64-v8a/libvulkan_turnip.so" in archive.namelist()
+        report["expects_turnip"] = expects_turnip
         report["device_model"] = device.text("shell", "getprop", "ro.product.model").strip()
         original = device.call("shell", "cat", ARGS_FILE, check=False)
         if original.returncode == 0:
@@ -234,6 +259,8 @@ def run_candidate(apk, reference, output, serial, *, adb=None, ffmpeg=None, time
         if max(sum(v) for v in expected.values()) - min(sum(v) for v in expected.values()) < 0.45:
             raise RuntimeError("Reference lacks lighting contrast needed to detect the EEVEE regression")
         armed = False
+        shadow_captures = {}
+        shadow_view = None
         deadline = time.monotonic() + timeout
         last_phase = None
 
@@ -267,17 +294,58 @@ def run_candidate(apk, reference, output, serial, *, adb=None, ffmpeg=None, time
                 (output / ("motion-%04d.png" % len(report["samples"]))).write_bytes(png)
                 print("[motion]", len(report["samples"]), "error=%.4f" % sample["worst_error"],
                       "PASS" if sample["passed"] else "FAIL", flush=True)
+            elif last_phase in {"shadow_viewport_on", "shadow_viewport_off"}:
+                if last_phase in shadow_captures:
+                    time.sleep(0.25)
+                    continue
+                device.foreground()
+                png = device.call("exec-out", "screencap", "-p").stdout
+                device.foreground()
+                after = read_status()
+                if (after.get("phase") != last_phase
+                        or after["window_size"] != state["window_size"]
+                        or after["shadow_viewport_points"] != state["shadow_viewport_points"]):
+                    raise RuntimeError("Viewport changed during shadow capture")
+                image = decode_png(png, decoder)
+                view = (image[:2], state["window_size"], state["shadow_viewport_points"])
+                if shadow_view is not None and shadow_view != view:
+                    raise RuntimeError("Shadow comparison requires the same viewport in both captures")
+                shadow_view = view
+                shadow_captures[last_phase] = shadow_sample(
+                    image, state["shadow_viewport_points"], window_size=state["window_size"])
+                (output / (last_phase + ".png")).write_bytes(png)
+                device.call("shell", "touch", remote + "/output/" + last_phase + "-captured")
             else:
                 time.sleep(0.25)
         else:
             raise TimeoutError("Render checks did not finish within " + str(timeout) + " seconds")
         report["device_tests"] = device_report
         report["eevee_motion"] = approve_motion(report["samples"])
-        report["passed"] = bool(device_report.get("passed") and report["eevee_motion"]["passed"])
         if sha256(apk) != report["apk_sha256"]:
             raise RuntimeError("APK changed while it was being validated")
-        device.pull_tree(remote + "/output", output / "device-output")
+        device_output = output / "device-output"
+        device.pull_tree(remote + "/output", device_output)
         device.pull(remote + "/reference/reference.json", output / "reference-used.json")
+
+        if not device_report.get("error"):
+            if expects_turnip and "turnip" not in device_report["gpu"]["driver"].casefold():
+                raise RuntimeError("Turnip APK did not use the bundled driver")
+            render_points = device_report["shadow_render_points"]
+            images = [decode_png((device_output / f"shadow-render-{mode}.png").read_bytes(), decoder)
+                      for mode in ("on", "off")]
+            if images[0][:2] != images[1][:2]:
+                raise RuntimeError("Shadow renders have different dimensions")
+            shadows = {
+                "viewport": approve_shadows(shadow_captures["shadow_viewport_on"],
+                                            shadow_captures["shadow_viewport_off"]),
+                "render": approve_shadows(*(shadow_sample(image, render_points) for image in images)),
+            }
+            report["eevee_shadows"] = shadows
+            for name, result in shadows.items():
+                print("[shadows]", name, f"drop={result['shadow_drop']:.4f}",
+                      "PASS" if result["passed"] else "FAIL", flush=True)
+            report["passed"] = bool(device_report.get("passed") and report["eevee_motion"]["passed"]
+                                    and all(result["passed"] for result in shadows.values()))
     except Exception as error:
         report.update(passed=False, error=type(error).__name__ + ": " + str(error))
         if device:

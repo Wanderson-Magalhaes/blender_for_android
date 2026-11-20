@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -164,6 +165,25 @@ def apk_path(config: str, turnip: bool = False) -> Path:
     return stage_dir(config, turnip) / f"blender-{config}{flavour(turnip)}.apk"
 
 
+def apk_artifact_stem(apk: Path, config: str) -> str:
+    """Name distributable copies using the versions inside the signed APK."""
+    env = tool_env()
+    aapt = Path(env["ANDROID_HOME"]) / "build-tools/35.0.1/aapt2"
+    badging = subprocess.check_output([aapt, "dump", "badging", apk], env=env, text=True)
+    version = re.search(r"(?m)^package: .*?\bversionName='(\d+\.\d+\.\d+)", badging)
+    if not version:
+        raise RuntimeError(f"Cannot find Blender version in {apk}")
+    stem = f"Blender-Android-{version[1]}-{config.title()}"
+    with zipfile.ZipFile(apk) as package:
+        driver = "lib/arm64-v8a/libvulkan_turnip.so"
+        if driver not in package.namelist():
+            return f"{stem}-Standard"
+        mesa_version = re.search(rb"\bMesa (\d+\.\d+\.\d+(?:[-.][a-zA-Z0-9]+)*) \(", package.read(driver))
+        if not mesa_version:
+            raise RuntimeError(f"Cannot find bundled Mesa Turnip version in {apk}")
+        return f"{stem}-Turnip-{mesa_version[1].decode('ascii')}-Experimental"
+
+
 def archive_apk(config: str, turnip: bool, keep: int) -> Path | None:
     """Copy the freshly built APK into APK_ARCHIVE under a timestamped name.
 
@@ -180,11 +200,11 @@ def archive_apk(config: str, turnip: bool, keep: int) -> Path | None:
 
     APK_ARCHIVE.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    stem = f"blender-{config}{flavour(turnip)}"
-    dest = APK_ARCHIVE / f"{stem}-{stamp}.apk"
+    legacy_stem = f"blender-{config}{flavour(turnip)}"
+    dest = APK_ARCHIVE / f"{apk_artifact_stem(src, config)}-{stamp}.apk"
     shutil.copy2(src, dest)
 
-    latest = APK_ARCHIVE / f"{stem}-latest.apk"
+    latest = APK_ARCHIVE / f"{legacy_stem}-latest.apk"
     latest.unlink(missing_ok=True)
     try:
         os.link(dest, latest)
@@ -196,9 +216,11 @@ def archive_apk(config: str, turnip: bool, keep: int) -> Path | None:
     print(f"[archive] latest -> {latest}")
 
     if keep > 0:
+        variant = "Turnip-*-Experimental" if turnip else "Standard"
         builds = sorted(
-            (p for p in APK_ARCHIVE.glob(f"{stem}-20*.apk")),
-            key=lambda p: p.name,
+            (*APK_ARCHIVE.glob(f"{legacy_stem}-20*.apk"),
+             *APK_ARCHIVE.glob(f"Blender-Android-*-{config.title()}-{variant}-20*.apk")),
+            key=lambda p: p.stem[-15:],
             reverse=True,
         )
         for old_apk in builds[keep:]:
@@ -249,6 +271,9 @@ def build(config: str, repackage: bool = False, debuggable: bool = False,
     staged = (stage / "base.apk").exists() and (stage / "lib/arm64-v8a/libblender.so").exists()
     env = "BLENDER_ANDROID_DEBUGGABLE=1 " if debuggable else ""
     if turnip:
+        if not (BUILD_BASE / DEPS_MARKER / "turnip/lib/libvulkan_turnip.so").is_file():
+            sys.exit("Turnip dependencies missing. Run build_files/android/build_turnip.sh "
+                     "with the same BUILD_BASE.")
         # fastdeploy has no notion of flavours, so a Turnip build always repackages.
         env += f"BLENDER_ANDROID_TURNIP=1 BLENDER_ANDROID_FLAVOUR={flavour(True)} "
         repackage = True
@@ -364,7 +389,7 @@ def main() -> int:
                         help="rebuild the runtime payload too; needed when scripts, "
                              "datafiles or the dependency set change")
     parser.add_argument("--release", action="store_true",
-                        help="full release: repackage, test Cycles and live EEVEE on --serial, "
+                        help="standard full release: repackage, test Cycles and EEVEE on --serial, "
                              "then promote only a passing APK into apk/releases")
     parser.add_argument("--render-reference", type=Path, metavar="DIR",
                         help="official desktop reference from tests/create_render_reference.py")
@@ -401,6 +426,8 @@ def main() -> int:
         parser.error("--render-reference requires --release; ordinary builds are not validated")
 
     if args.release:
+        if args.turnip:
+            parser.error("Turnip is an experimental APK. Use full --turnip to build it.")
         if args.config != "full" or not args.serial or not args.render_reference:
             parser.error("--release requires full, --serial and --render-reference")
         if (args.debuggable or args.validation or args.no_archive or args.install or args.run
@@ -431,15 +458,16 @@ def main() -> int:
         print(f"APK: {apk_path(args.config, args.turnip)}")
         if args.release:
             from release_validation import validate_release
-            validate_release(apk_path(args.config, args.turnip), args.render_reference,
-                             BUILD_BASE, args.serial)
+            package = apk_path(args.config, args.turnip)
+            validate_release(package, args.render_reference, BUILD_BASE, args.serial,
+                             artifact_stem=apk_artifact_stem(package, args.config))
         elif not args.no_archive:
             archive_apk(args.config, args.turnip, args.keep)
 
     if args.install:
         if not args.config:
             parser.error("--install needs a config")
-        adb(["install", "-r", str(apk_path(args.config))], args.serial)
+        adb(["install", "-r", str(apk_path(args.config, args.turnip))], args.serial)
 
     if args.clear_caches:
         clear_caches(args.serial)

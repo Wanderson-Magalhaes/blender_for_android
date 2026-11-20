@@ -10,6 +10,7 @@
  */
 
 #include "GPU_capabilities.hh"
+#include "GPU_platform.hh"
 
 #include "BKE_material.hh"
 #include "BKE_node_runtime.hh"
@@ -519,6 +520,13 @@ const char *ShaderModule::static_shader_create_info_name_get(eShaderType shader_
     case SHADOW_TILEMAP_BOUNDS:
       return "eevee_shadow_tilemap_bounds";
     case SHADOW_TILEMAP_FINALIZE:
+#ifdef __ANDROID__
+      if (GPU_type_matches_ex(
+              GPU_DEVICE_QUALCOMM, GPU_OS_ANY, GPU_DRIVER_OFFICIAL, GPU_BACKEND_VULKAN))
+      {
+        return "eevee_shadow_tilemap_finalize_small_group";
+      }
+#endif
       return "eevee_shadow_tilemap_finalize";
     case SHADOW_TILEMAP_RENDERMAP:
       return "eevee_shadow_tilemap_rendermap";

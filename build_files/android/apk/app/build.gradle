@@ -24,8 +24,8 @@ android {
     applicationId 'org.blender.blender'
     minSdk 31
     targetSdk 34
-    versionCode 1
-    versionName '5.3-android'
+    versionCode 5030101
+    versionName '5.3.1 (S24 Ultra)'
     ndk { abiFilters 'arm64-v8a' }
   }
 

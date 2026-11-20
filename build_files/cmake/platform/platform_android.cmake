@@ -53,14 +53,16 @@ find_library(VULKAN_LIBRARY vulkan REQUIRED)
 set(VULKAN_LIBRARIES ${VULKAN_LIBRARY})
 set(VULKAN_FOUND ON)
 
-# adrenotools: lets us load a replacement Vulkan driver (Mesa Turnip) without root.
-if(EXISTS ${LIBDIR}/adrenotools/lib/libadrenotools.a)
-  include_directories(SYSTEM ${LIBDIR}/adrenotools/include)
-  list(APPEND VULKAN_LIBRARIES
-    ${LIBDIR}/adrenotools/lib/libadrenotools.a
-    ${LIBDIR}/adrenotools/lib/liblinkernsbypass.a
-  )
-  add_definitions(-DWITH_ADRENOTOOLS)
+# Reconfigure incremental builds when the optional Turnip loader is staged.
+file(GLOB ANDROID_ADRENOTOOLS_LIBRARIES CONFIGURE_DEPENDS
+  "${LIBDIR}/adrenotools/lib/libadrenotools.a"
+  "${LIBDIR}/adrenotools/lib/liblinkernsbypass.a"
+)
+if(EXISTS "${LIBDIR}/adrenotools/lib/libadrenotools.a" AND
+   EXISTS "${LIBDIR}/adrenotools/lib/liblinkernsbypass.a")
+  set(ANDROID_ADRENOTOOLS_INCLUDE_DIR "${LIBDIR}/adrenotools/include")
+else()
+  unset(ANDROID_ADRENOTOOLS_LIBRARIES)
 endif()
 
 # Find harvested libs by rooting into their prefixes, never host paths.

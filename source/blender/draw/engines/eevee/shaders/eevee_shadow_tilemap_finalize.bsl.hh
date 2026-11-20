@@ -57,26 +57,22 @@ struct TilemapFinalize {
  * This avoids one level of indirection when evaluating shadows and allows
  * to use a sampler instead of a SSBO bind.
  */
-[[compute, local_size(SHADOW_TILEMAP_RES, SHADOW_TILEMAP_RES)]]
-void tilemap_finalize_main([[resource_table]] TilemapFinalize &srt,
-                           [[global_invocation_id]] const uint3 global_id,
-                           [[local_invocation_index]] const uint local_index)
-
+void tilemap_finalize_impl(TilemapFinalize &srt,
+                           const uint3 global_id,
+                           const uint local_index,
+                           const int group_rows)
 {
   int tilemap_index = int(global_id.z);
-  int2 tile_co = int2(global_id.xy);
 
   ShadowTileMapData tilemap_data = srt.tilemaps_buf[tilemap_index];
   bool is_cubemap = (tilemap_data.projection_type == SHADOW_PROJECTION_CUBEFACE);
   int lod_max = is_cubemap ? SHADOW_TILEMAP_LOD : 0;
 
-  srt.lod_rendered = 0u;
+  if (local_index == 0u) {
+    srt.lod_rendered = 0u;
+  }
 
   for (int lod = lod_max; lod >= 0; lod--) {
-    int2 tile_co_lod = tile_co >> lod;
-    int tile_index = shadow_tile_offset(uint2(tile_co_lod), tilemap_data.tiles_index, lod);
-
-    /* Compute update area. */
     if (local_index == 0u) {
       srt.rect_min_x = SHADOW_TILEMAP_RES;
       srt.rect_min_y = SHADOW_TILEMAP_RES;
@@ -86,29 +82,31 @@ void tilemap_finalize_main([[resource_table]] TilemapFinalize &srt,
 
     barrier();
 
-    ShadowTileData tile = shadow_tile_unpack(srt.tiles_buf[tile_index]);
-    bool lod_valid_thread = all(equal(tile_co, tile_co_lod << lod));
-    bool do_page_render = tile.is_used && tile.do_update && lod_valid_thread;
-    if (do_page_render) {
-      atomicMin(srt.rect_min_x, tile_co_lod.x);
-      atomicMin(srt.rect_min_y, tile_co_lod.y);
-      atomicMax(srt.rect_max_x, tile_co_lod.x + 1);
-      atomicMax(srt.rect_max_y, tile_co_lod.y + 1);
+    /* Each invocation handles one tile per stripe of group_rows rows. */
+    for (int y = int(global_id.y); y < SHADOW_TILEMAP_RES; y += group_rows) {
+      int2 tile_co = int2(int(global_id.x), y);
+      int2 tile_co_lod = tile_co >> lod;
+      int tile_index = shadow_tile_offset(uint2(tile_co_lod), tilemap_data.tiles_index, lod);
+      ShadowTileData tile = shadow_tile_unpack(srt.tiles_buf[tile_index]);
+      bool lod_valid_thread = all(equal(tile_co, tile_co_lod << lod));
+      if (tile.is_used && tile.do_update && lod_valid_thread) {
+        atomicMin(srt.rect_min_x, tile_co_lod.x);
+        atomicMin(srt.rect_min_y, tile_co_lod.y);
+        atomicMax(srt.rect_max_x, tile_co_lod.x + 1);
+        atomicMax(srt.rect_max_y, tile_co_lod.y + 1);
+      }
     }
 
     barrier();
 
-    int2 rect_min = int2(srt.rect_min_x, srt.rect_min_y);
-    int2 rect_max = int2(srt.rect_max_x, srt.rect_max_y);
-
-    int viewport_index = viewport_select(rect_max - rect_min);
-    viewport_index = srt.use_multi_viewport ? viewport_index : SHADOW_TILEMAP_LOD;
-    int2 viewport_size = shadow_viewport_size_get(uint(viewport_index));
-
     /* Issue one view if there is an update in the LOD. */
     if (local_index == 0u) {
-      bool lod_has_update = rect_min.x < rect_max.x;
-      if (lod_has_update) {
+      int2 rect_min = int2(srt.rect_min_x, srt.rect_min_y);
+      int2 rect_max = int2(srt.rect_max_x, srt.rect_max_y);
+      if (rect_min.x < rect_max.x) {
+        int viewport_index = srt.use_multi_viewport ? viewport_select(rect_max - rect_min) :
+                                                      SHADOW_TILEMAP_LOD;
+        int2 viewport_size = shadow_viewport_size_get(uint(viewport_index));
         int view_index = atomicAdd(srt.statistics_buf.view_needed_count, 1);
         if (view_index < SHADOW_VIEW_MAX) {
           srt.lod_rendered |= 1u << lod;
@@ -172,39 +170,57 @@ void tilemap_finalize_main([[resource_table]] TilemapFinalize &srt,
   /* Broadcast result of `lod_rendered`. */
   barrier();
 
-  /* With all threads (LOD0 size dispatch) load each lod tile from the highest lod
-   * to the lowest, keeping track of the lowest one allocated which will be use for shadowing.
-   * This guarantee a O(1) lookup time.
-   * Add one render view per LOD that has tiles to be rendered. */
-  int valid_tile_index = -1;
-  uint valid_lod = 0u;
-  for (int lod = lod_max; lod >= 0; lod--) {
-    int2 tile_co_lod = tile_co >> lod;
-    int tile_index = shadow_tile_offset(uint2(tile_co_lod), tilemap_data.tiles_index, lod);
-    ShadowTileData tile = shadow_tile_unpack(srt.tiles_buf[tile_index]);
+  for (int y = int(global_id.y); y < SHADOW_TILEMAP_RES; y += group_rows) {
+    int2 tile_co = int2(int(global_id.x), y);
+    /* Find the lowest allocated LOD so shadow sampling can look up the page in O(1). */
+    int valid_tile_index = -1;
+    uint valid_lod = 0u;
+    for (int lod = lod_max; lod >= 0; lod--) {
+      int2 tile_co_lod = tile_co >> lod;
+      int tile_index = shadow_tile_offset(uint2(tile_co_lod), tilemap_data.tiles_index, lod);
+      ShadowTileData tile = shadow_tile_unpack(srt.tiles_buf[tile_index]);
 
-    bool lod_is_rendered = ((srt.lod_rendered >> lod) & 1u) == 1u;
-    if (tile.is_used && tile.is_allocated && (!tile.do_update || lod_is_rendered)) {
-      /* Save highest lod for this thread. */
-      valid_tile_index = tile_index;
-      valid_lod = uint(lod);
+      bool lod_is_rendered = ((srt.lod_rendered >> lod) & 1u) == 1u;
+      if (tile.is_used && tile.is_allocated && (!tile.do_update || lod_is_rendered)) {
+        /* Save highest lod for this thread. */
+        valid_tile_index = tile_index;
+        valid_lod = uint(lod);
+      }
     }
+
+    /* Store the highest LOD valid page for rendering. */
+    ShadowTileDataPacked tile_packed = (valid_tile_index != -1) ? srt.tiles_buf[valid_tile_index] :
+                                                                  SHADOW_NO_DATA;
+    ShadowTileData tile_data = shadow_tile_unpack(tile_packed);
+    ShadowSamplingTile tile_sampling = shadow_sampling_tile_create(tile_data, valid_lod);
+    ShadowSamplingTilePacked tile_sampling_packed = shadow_sampling_tile_pack(tile_sampling);
+
+    uint2 atlas_texel = shadow_tile_coord_in_atlas(uint2(tile_co), tilemap_index);
+    imageStoreFast(srt.tilemaps_img, int2(atlas_texel), uint4(tile_sampling_packed));
   }
-
-  /* Store the highest LOD valid page for rendering. */
-  ShadowTileDataPacked tile_packed = (valid_tile_index != -1) ? srt.tiles_buf[valid_tile_index] :
-                                                                SHADOW_NO_DATA;
-  ShadowTileData tile_data = shadow_tile_unpack(tile_packed);
-  ShadowSamplingTile tile_sampling = shadow_sampling_tile_create(tile_data, valid_lod);
-  ShadowSamplingTilePacked tile_sampling_packed = shadow_sampling_tile_pack(tile_sampling);
-
-  uint2 atlas_texel = shadow_tile_coord_in_atlas(uint2(tile_co), tilemap_index);
-  imageStoreFast(srt.tilemaps_img, int2(atlas_texel), uint4(tile_sampling_packed));
 
   if (all(equal(global_id, uint3(0)))) {
     /* Clamp it as it can underflow if there is too much tile present on screen. */
     srt.pages_infos_buf.page_free_count = max(srt.pages_infos_buf.page_free_count, 0);
   }
+}
+
+[[compute, local_size(SHADOW_TILEMAP_RES, SHADOW_TILEMAP_RES)]]
+void tilemap_finalize_main([[resource_table]] TilemapFinalize &srt,
+                           [[global_invocation_id]] const uint3 global_id,
+                           [[local_invocation_index]] const uint local_index)
+{
+  tilemap_finalize_impl(srt, global_id, local_index, SHADOW_TILEMAP_RES);
+}
+
+/* Android Adreno can skip shadow view updates with 32x32 invocations. Process
+ * the same tilemap with 32x8 invocations, visiting four tile rows per thread. */
+[[compute, local_size(SHADOW_TILEMAP_RES, SHADOW_TILEMAP_RES / 4)]]
+void tilemap_finalize_small_group_main([[resource_table]] TilemapFinalize &srt,
+                                       [[global_invocation_id]] const uint3 global_id,
+                                       [[local_invocation_index]] const uint local_index)
+{
+  tilemap_finalize_impl(srt, global_id, local_index, SHADOW_TILEMAP_RES / 4);
 }
 
 struct RendermapFinalize {
@@ -278,6 +294,7 @@ void rendermap_finalize_main([[resource_table]] RendermapFinalize &srt,
 }
 
 PipelineCompute tilemap_finalize(eevee::shadow::tilemap_finalize_main);
+PipelineCompute tilemap_finalize_small_group(eevee::shadow::tilemap_finalize_small_group_main);
 PipelineCompute tilemap_rendermap(eevee::shadow::rendermap_finalize_main);
 
 }  // namespace eevee::shadow

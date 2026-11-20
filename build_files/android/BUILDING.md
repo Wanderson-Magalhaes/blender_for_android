@@ -252,19 +252,32 @@ Two messages are expected on a Vulkan 1.1 Adreno device and are not bugs:
 
 ### Turnip (Mesa) driver
 
-Loads Mesa's Turnip in place of the vendor driver through `libadrenotools`,
-which provides `VK_KHR_dynamic_rendering` on devices whose vendor driver is
-Vulkan 1.1 only, bypassing the render-pass fallback. Selected at runtime, so no
-separate build is needed - but the Turnip driver must be present on the device.
+The optional Turnip APK loads Mesa Turnip instead of the Qualcomm Vulkan
+driver through libadrenotools. The dependency preparation script uses the
+Mesa 26.2.3 and libadrenotools revisions from the Simfeo Android Alpha 4 port.
+It needs Git, Ninja, CMake, Python with pip and the Android NDK.
 
 ```bash
-build_files/android/build.py --enable-turnip
-build_files/android/build.py --disable-turnip
+export BUILD_BASE=/path/to/android-build-base
+build_files/android/build_turnip.sh
+python3 build_files/android/build.py full --turnip
 ```
 
-The driver itself is not shipped: place a Turnip build at
-`/data/data/org.blender.blender/files/turnip/vulkan.ad07xx.so`. The
-`libadrenotools` hooks are bundled by `package.sh` automatically.
+Use `tests/run_render_regressions.py` to check an experimental Turnip APK on
+a device. The archive name includes the Blender and Mesa versions and the
+`Experimental` label. The standard APK keeps the system Vulkan driver. The
+Turnip APK selects its bundled driver on supported devices. For comparisons
+on the same installed package, use the debug property overrides:
+
+```bash
+build_files/android/build.py --disable-turnip
+build_files/android/build.py --enable-turnip
+```
+
+Keep the Turnip variant experimental. On the Galaxy S24 Ultra (SM-S928B),
+the release shadow and motion checks pass with Mesa 26.2.3. An EEVEE test material
+combining eight 4D Noise Texture nodes crashes inside the Turnip driver during
+Vulkan graphics pipeline creation. The same material renders on the standard APK.
 
 Status on Adreno 642L (as of Aug 2026): loads and renders correctly, and passes
 the colour picker stress test, but crashes inside the driver

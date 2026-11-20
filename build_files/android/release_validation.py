@@ -21,6 +21,7 @@ def promote(apk, report, release_directory):
     apk, release_directory = Path(apk), Path(release_directory)
     device = report.get("device_tests", {})
     tests = device.get("tests", {})
+    shadows = report.get("eevee_shadows", {})
     required = {"cycles_cold", "eevee_final"} | {
         "cycles_after_viewport_" + str(i) for i in range(8)}
     if (report.get("passed") is not True or device.get("complete") is not True
@@ -28,6 +29,10 @@ def promote(apk, report, release_directory):
             or not all(test.get("passed") is True for test in tests.values())
             or report.get("eevee_motion", {}).get("passed") is not True):
         raise RuntimeError("Release blocked: render evidence failed or is incomplete")
+    if any(shadows.get(name, {}).get("passed") is not True for name in ("viewport", "render")):
+        raise RuntimeError("Release blocked: EEVEE cast shadow evidence failed or is incomplete")
+    if report.get("expects_turnip"):
+        raise RuntimeError("Release blocked: Turnip APKs are experimental")
     digest = sha256(apk)
     if report.get("apk_sha256") != digest:
         raise RuntimeError("Release blocked: APK differs from the tested candidate")
@@ -54,13 +59,13 @@ def promote(apk, report, release_directory):
     return target
 
 
-def validate_release(apk, reference, build_base, serial):
+def validate_release(apk, reference, build_base, serial, *, artifact_stem):
     root = Path(build_base) / "release_checks" / (
         datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
         + "-" + uuid.uuid4().hex[:8])
     root.mkdir(parents=True)
     # Freeze bytes even if another ordinary build updates the stage during the test.
-    candidate = root / Path(apk).name
+    candidate = root / (artifact_stem + ".apk")
     shutil.copy2(apk, candidate)
     report = run_candidate(candidate, reference, root / "results", serial)
     return promote(candidate, report, Path(build_base) / "apk" / "releases")
