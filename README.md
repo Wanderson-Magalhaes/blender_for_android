@@ -38,6 +38,12 @@ One warning: this tree does not follow Blender's own structure everywhere. It
 carries a lot of experiments, and some of them left marks. Read it as a
 sketchbook, not as a reference implementation.
 
+## Reporting bugs
+
+Use the [Android bug report form](https://github.com/Wanderson-Magalhaes/blender_for_android/issues/new?template=01_android_bug.yml) for APKs downloaded from this repository's Releases. Include the download link, exact APK name, build variant, device model, GPU, and Android version. For APKs from @idimus (a.k.a. simfeo) or other forks, use their project's reporting channels.
+
+The Galaxy S24 Ultra (Adreno 750) is currently the only device available to reproduce bugs and verify fixes. Reports from other devices are welcome as compatibility feedback, with limited support.
+
 ## Credits
 
 This port did not start with me. It started with [**@idimus**](https://www.reddit.com/user/idimus/)

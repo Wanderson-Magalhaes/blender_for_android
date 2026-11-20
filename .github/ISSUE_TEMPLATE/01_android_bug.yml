@@ -1,0 +1,103 @@
+name: Android bug report
+description: Report a problem with an APK from Wanderson-Magalhaes/blender_for_android.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Check which build you installed
+
+        This tracker covers APKs from [Wanderson-Magalhaes/blender_for_android Releases](https://github.com/Wanderson-Magalhaes/blender_for_android/releases). If you downloaded your APK from [@idimus (a.k.a. simfeo)](https://github.com/simfeo/blender/releases) or another project, report the problem through that project's channels.
+
+        The **Samsung Galaxy S24 Ultra (Adreno 750)** is currently the only device the maintainer can use to reproduce bugs and verify fixes. Reports from other devices are welcome as compatibility feedback, with limited support.
+  - type: checkboxes
+    id: build-origin
+    attributes:
+      label: Confirm the APK source
+      options:
+        - label: I checked my download and reproduced the bug with an APK from Wanderson-Magalhaes/blender_for_android Releases.
+          required: true
+  - type: input
+    id: apk-link
+    attributes:
+      label: Release or APK download link
+      description: Paste the GitHub release or direct APK link from this repository. The Blender version can be shared by different forks.
+      placeholder: https://github.com/Wanderson-Magalhaes/blender_for_android/releases/tag/v5.3.1-android
+    validations:
+      required: true
+  - type: input
+    id: apk-filename
+    attributes:
+      label: Exact APK file name
+      placeholder: Blender-Android-5.3.1-Full-Standard.apk
+    validations:
+      required: true
+  - type: input
+    id: blender-version
+    attributes:
+      label: Installed Blender version
+      description: Copy the version shown in Blender's About screen or Android App info.
+      placeholder: "5.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: variant
+    attributes:
+      label: Build variant
+      options:
+        - Full Standard (system Vulkan driver)
+        - Full Turnip Experimental (Mesa Vulkan driver)
+        - Earlier release without a variant name
+    validations:
+      required: true
+  - type: dropdown
+    id: device-coverage
+    attributes:
+      label: Device category
+      options:
+        - Samsung Galaxy S24 Ultra (Adreno 750)
+        - Other device (compatibility feedback)
+    validations:
+      required: true
+  - type: input
+    id: device-model
+    attributes:
+      label: Device model and model number
+      placeholder: Samsung Galaxy S24 Ultra (SM-S928B)
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: Enter the GPU shown in Blender's Preferences or your device specifications. Enter "Unknown" if you cannot find it.
+      placeholder: Qualcomm Adreno 750
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: Android 15
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from a new project if possible. For rendering issues, include the render engine and whether the bug appears in the viewport, the final render, or both.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+      description: Describe what you expected, what happened, and how often it happens.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, sample files, or logs
+      description: Attach anything that helps reproduce the problem. Remove personal information and private project data before posting.

@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an improvement for this Android fork.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What would you like to do?
+      description: Describe your Android workflow and what currently gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Explain what would help and include your device or input setup if relevant.
+    validations:
+      required: true

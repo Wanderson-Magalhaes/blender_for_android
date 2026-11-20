@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the APKs for this fork
+    url: https://github.com/Wanderson-Magalhaes/blender_for_android/releases
+    about: Check the release and exact APK file name before reporting a bug.
+  - name: "@idimus (simfeo) builds"
+    url: https://github.com/simfeo/blender/releases
+    about: Find the original project's release pages and check whether you installed one of its builds.
